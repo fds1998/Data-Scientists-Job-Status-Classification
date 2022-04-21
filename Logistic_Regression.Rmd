@@ -1,0 +1,306 @@
+
+
+```{r,echo=FALSE,include=FALSE}
+
+# Logistic Regression
+
+library(tidyverse)
+library(caret)
+library(ROSE)
+#remotes::install_github("cran/DMwR")
+library(DMwR)
+library(pROC)
+library(tidytable)
+```
+
+
+```{r,echo=FALSE,include=FALSE}
+dat = read.csv('aug_train.csv')
+colSums(is.na(dat))
+```
+
+
+
+
+```{r,echo=FALSE,include=FALSE}
+dat$city <- as.factor(dat$city)
+dat$gender <- as.factor(dat$gender)
+dat$relevent_experience <- as.factor(dat$relevent_experience)
+dat$enrolled_university <- as.factor(dat$enrolled_university)
+dat$education_level <- as.factor(dat$education_level)
+dat$major_discipline <- as.factor(dat$major_discipline)
+dat$experience <- as.factor(dat$experience)
+dat$company_size <- as.factor(dat$company_size)
+dat$company_type <- as.factor(dat$company_type)
+dat$last_new_job <- as.factor(dat$last_new_job)
+dat$target <- as.factor(dat$target)
+dat
+
+```
+
+
+
+
+```{r,echo=FALSE,include=FALSE}
+#In R, missing data are not displayed as NA, but as ''. Thus, we first replace these empty strings with 'NA'
+dat[dat==''] <- NA
+summary(dat)
+
+colSums(is.na(dat))
+```
+
+
+
+```{r,echo=FALSE,include=FALSE}
+mean(is.na(dat$city_development_index)) 
+mean(is.na(dat$training_hours))
+
+```
+
+
+```{r,echo=FALSE,include=FALSE}
+#No missing values for numerical variables.
+#Next we look at the categorical variables,, replacing the missing values with the mode.
+
+jobdata <- dat
+jobdata$gender[is.na(jobdata$gender)] = 'Male'
+jobdata$enrolled_university[is.na(jobdata$enrolled_university)] = 'no_enrollment'
+jobdata$education_level[is.na(jobdata$education_level)] = 'Graduate'
+jobdata$major_discipline[is.na(jobdata$major_discipline)] = 'STEM'
+jobdata$experience[is.na(jobdata$experience)] = '>20'
+jobdata$company_size[is.na(jobdata$company_size)] = '50-99'
+jobdata$company_type[is.na(jobdata$company_type)] = 'Pvt Ltd'
+jobdata$last_new_job[is.na(jobdata$last_new_job)] = '1'
+
+jobdata$gender <- droplevels(jobdata$gender)
+jobdata$enrolled_university <- droplevels(jobdata$enrolled_university)
+jobdata$education_level <- droplevels(jobdata$education_level)
+jobdata$major_discipline <- droplevels(jobdata$major_discipline)
+jobdata$company_type <- droplevels(jobdata$company_type)
+jobdata$last_new_job <- droplevels(jobdata$last_new_job)
+
+```
+
+
+```{r,echo=FALSE,include=FALSE}
+df <- dat
+
+# KNN imputatin with k = 3
+
+set.seed(12)
+
+df2 = df[,c(1,4,6:12)]
+
+#dmy <- dummyVars(" ~ .", data = df2[,c(2:9)], fullRank = T)
+#dat_transformed <- data.frame(predict(dmy, newdata = df2[,c(2:9)]))
+
+#dat_transformed
+
+df2$count_na <- rowSums(is.na(df2))
+
+df_test_knn = df2 %>% filter(count_na < 7)
+
+df_imp = knnImputation(df_test_knn,k = 3,meth = "median")
+
+
+df_final = merge(x=df,y=df_imp,by="enrollee_id")
+
+df_final = df_final[,colSums(is.na(df_final)) == 0]
+
+df_final = df_final %>% select(-c(count_na))
+
+jobdata <- df_final
+
+colnames(jobdata)
+
+```
+
+
+
+
+```{r,echo=FALSE,include=FALSE}
+set.seed(12)
+#n <- nrow(jobdata)
+#train.id <- sample(1:n,round(0.8*n)) 
+#train <- jobdata[train.id,]
+#test <- jobdata[-train.id,]
+
+#table(test$target)
+
+data <- df_final %>% mutate(id=row_number())
+#randomly sample 70% of data in each species group as the training set
+train <- data %>% group_by(target) %>% sample_frac(0.8) %>% ungroup() 
+#getting the rest of data (whose row id's are not in the training set) as the test set
+#check function anti_join for more details
+test <- anti_join(data, train, by = 'id')
+
+train = train %>% select(-id)
+test = test %>% select(-id)
+
+```
+
+
+```{r,echo=FALSE,include=FALSE}
+# Classes high imbalanced. 
+table(train$target)
+```
+
+
+
+
+```{r,echo=FALSE,include=FALSE}
+# Four different methods to address imbalance
+# Oversampling the minority class
+
+set.seed(12)
+trainup<-upSample(x=train[,c(1:5,7:14)],
+                  y=train$target,yname = "target")
+trainup
+
+table(trainup$target)
+
+```
+
+
+```{r,echo=FALSE,include=FALSE}
+# Undersampling the majority class
+set.seed(12)
+traindown <-downSample(x=train[,c(1:13)],
+                  y=train$target,yname = "target")
+traindown
+
+table(traindown$target)
+```
+
+
+```{r,echo=FALSE,include=FALSE}
+# ROSE uses smoothed bootstrapping to draw artificial samples from the feature space neighbourhood around the minority class.
+
+set.seed(12)
+trainrose = ROSE(target~.,data=train)$data
+
+table(trainrose$target)
+
+```
+
+
+```{r,echo=FALSE,include=FALSE}
+# SMOTE draws artificial samples by choosing points that lie on the line connecting the rare observation to one of its nearest neighbors in the feature space.
+
+set.seed(12)
+trainsmote <- SMOTE(target ~ .,data = data.frame(train),perc.over = 100)
+table(trainsmote$target)
+
+
+```
+
+
+
+
+```{r,echo=FALSE,include=FALSE}
+# Training logistic Regression model
+
+
+## Without subsampling
+set.seed(12)
+model1 <- glm(target ~., data=train, family = "binomial")
+#summary(model1)
+
+# gender, employeeid, city not important
+
+model2 <- glm(target ~ city_development_index + relevent_experience + enrolled_university.y + education_level.y +
+                major_discipline.y + experience.y + company_size.y +company_type.y + last_new_job.y + training_hours, data = train,family = "binomial")
+summary(model2)
+# major discipline
+
+model3 <- glm(target ~ city_development_index + relevent_experience + enrolled_university.y + education_level.y + experience.y + company_size.y + company_type.y + last_new_job.y + training_hours, data = train,family = "binomial")
+summary(model3)
+
+
+pred <- predict(model2,test, type="response")
+pred <- as.integer(pred>0.5)
+confusionMatrix(as.factor(pred),test$target)
+
+auc(test$target, pred)
+
+```
+
+
+
+```{r,echo=FALSE,include=FALSE}
+## Oversampling
+modelup <- glm(target ~ city_development_index + relevent_experience + enrolled_university.y + education_level.y + experience.y + company_size.y + company_type.y + last_new_job.y + training_hours, data = trainup,family = "binomial")
+#summary(modelup)
+
+pred <- predict(modelup,test, type="response")
+pred <- as.integer(pred>0.5)
+confusionMatrix(as.factor(pred),test$target)
+
+#lower accuracy but higher specificity
+
+auc(test$target, pred)
+
+```
+
+
+
+
+```{r,echo=FALSE,include=FALSE}
+# SMOTE
+modelsmote <- glm(target ~ city_development_index + relevent_experience + enrolled_university.y + education_level.y +
+                 experience.y + company_size.y +company_type.y + last_new_job.y + training_hours, data = trainsmote,family = "binomial")
+# check major discipline
+
+pred <- predict(modelsmote, test, type="response")
+pred <- as.integer(pred>0.5)
+confusionMatrix(as.factor(pred),test$target)
+
+auc(test$target, pred)
+
+```
+
+
+
+
+```{r,warning=FALSE,echo=FALSE,include=FALSE}
+### Oversampling implementation ###
+levels(trainup$target) <- c("No", "Yes")
+levels(test$target) <- c("No", "Yes")
+
+fit.control <- trainControl(method = "repeatedcv", number = 5, repeats = 3,
+                            summaryFunction = twoClassSummary, classProbs = TRUE)
+
+set.seed(12)  
+fit <- train(target ~ city_development_index + relevent_experience + enrolled_university.y + education_level.y + experience.y + company_type.y + last_new_job.y + training_hours, data = trainup, method = "glm", 
+             family = "binomial", trControl = fit.control)
+
+pred <- predict(fit, test)
+confusionMatrix(reference = test$target, data = pred, mode='everything', positive='Yes')
+
+
+```
+
+
+
+
+```{r,warning=FALSE,echo=FALSE,include=FALSE}
+# SMOTE
+levels(trainsmote$target) <- c("No", "Yes")
+levels(test$target) <- c("No", "Yes")
+
+fit.control <- trainControl(method = "repeatedcv", number = 5, repeats = 3,
+                            summaryFunction = twoClassSummary, classProbs = TRUE)
+
+set.seed(12)  
+fit <- train(target ~ city_development_index + relevent_experience + enrolled_university.y + education_level.y + experience.y + company_type.y + last_new_job.y + training_hours, data = trainsmote, method = "glm", 
+             family = "binomial", trControl = fit.control)
+
+pred <- predict(fit, test)
+confusionMatrix(reference = test$target, data = pred, mode='everything', positive='No')
+
+```
+
+
+```{r ref.label=knitr::all_labels(), echo=TRUE, eval=FALSE}
+```
+

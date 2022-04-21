@@ -1,0 +1,302 @@
+---
+output:
+  html_document: default
+  pdf_document: default
+---
+
+
+```{r,echo=FALSE,include=FALSE}
+### VISUALIZATION
+
+library(tidyverse)
+library(GGally)
+library(ggfortify)
+library(cowplot)
+library(treemapify)
+```
+
+
+```{r,echo=FALSE,include=FALSE}
+# Preprocessing
+
+df = read.csv('aug_train.csv')
+df[df == ''] <- "Not Provided"
+
+
+type_change = c("city","gender","relevent_experience","enrolled_university","education_level","major_discipline",
+                "experience","company_size","company_type","last_new_job","target")
+
+df[type_change]<-lapply(df[type_change],factor)
+
+levels(df$target) = c("Non-Job Seeker","Job Seeker")
+
+
+summary(df)
+
+```
+
+
+```{r,echo=FALSE,include=FALSE}
+# Gender vs job status
+
+df1 = df %>% group_by(gender) %>% tally()
+#df1
+# Change colors
+ggplot(data=df1, aes(x=gender, y=n)) +
+  geom_bar(stat="identity", fill="green")+
+  theme_minimal() + ggtitle("Distribution of gender")
+
+#ggsave("pg1.png", plot = p1) 
+
+dev.copy(png,'pg1.png')
+dev.off()
+
+###############
+
+df2 = df %>% group_by(gender,target) %>% tally()
+ggplot(df2,aes(gender,n,fill = target)) + geom_bar(stat = "identity", position = 'dodge') +
+  ggtitle("Job Search by gender")
+
+dev.copy(png,'pg2.png')
+dev.off()
+
+
+#plot_grid(p1,p2, labels = "AUTO")
+
+# Since males make up the majority of the dataset, most job seekers are males
+
+```
+
+
+
+```{r,echo=FALSE,include=FALSE}
+# Impact of CDI
+ggplot(df, aes(x=city_development_index))+
+  geom_density(color="red", fill="grey") + ggtitle("Density plot of City Development Index")
+
+dev.copy(png,'pcdi1.png')
+dev.off()
+
+# Use semi-transparent fill
+p2 <-ggplot(df, aes(x= city_development_index, fill= target)) +
+  geom_density(alpha=0.4) + ggtitle("Density plot of City Development Index by Job Status") + xlab("City Development Index (CDI)")
+p2
+
+dev.copy(png,'p1.png')
+dev.off()
+
+
+# For non-job seekers, there is only one peak at high CDI values, but for job seekers there are two peaks - one at low cdi values and other at high cdi values. Potentially, in high cdi areas there is a lot of scope for growth. People in low cdi areas could be wanting to improve their circumstances by looking for new jobs in, perhaps, high cdi areas.
+
+```
+
+
+
+```{r,echo=FALSE,include=FALSE}
+# Job Status based on education level and last job change
+# Edu level
+
+el_js = df %>% filter(target == "Job Seeker") %>% group_by(education_level) %>% tally() %>%  
+  mutate(percentage = ((n/4777)*100)) %>% mutate(status = "Job Seeker")
+
+el_njs =  df %>% filter(target == "Non-Job Seeker") %>% group_by(education_level) %>% tally() %>%  
+  mutate(percentage = ((n/14381)*100))%>% mutate(status = "Non-Job Seeker")
+
+el_df1 = bind_rows(el_js,el_njs)
+
+el_df1$status = as.factor(el_df1$status)
+
+
+ggplot(el_df1,aes(education_level, percentage ,fill = status)) + geom_bar(stat = "identity", position = 'dodge') + ggtitle("Job Status based on Education level") + scale_fill_manual(values=c('#999999','#E69F00')) + coord_flip() + ylab("Percentage") + xlab("Education Level")
+
+## people with relatively higher degrees have a fewer percentage of people seeking a new job in comparison to people with graduate degrees.
+
+dev.copy(png,'p2.png')
+dev.off()
+
+
+# Last job change
+
+change_js = df %>% filter(target == "Job Seeker") %>% group_by(last_new_job) %>% tally() %>%  
+  mutate(percentage = ((n/4777)*100)) %>% mutate(status = "Job Seeker")
+
+change_njs =  df %>% filter(target == "Non-Job Seeker") %>% group_by(last_new_job) %>% tally() %>%  
+  mutate(percentage = ((n/14381)*100))%>% mutate(status = "Non-Job Seeker")
+
+change_df1 = bind_rows(change_js,change_njs)
+
+change_df1$status = as.factor(change_df1$status)
+
+
+ggplot(change_df1,aes(last_new_job, percentage ,fill = status)) + geom_bar(stat = "identity", position = 'dodge') + ggtitle("Job Status based on last job change") + scale_fill_manual(values=c('#999999','#E69F00')) + coord_flip() + ylab("Percentage") + xlab("Last Job Change")
+
+# job seekers have changed jobs more often within the last 1 year in comparison to non job seekers, people who have never looked for a job are also ready for a new challenge.
+
+dev.copy(png,'p3.png')
+dev.off()
+
+
+```
+
+ 
+
+```{r,echo=FALSE,include=FALSE}
+### Company size vs level of experience (Heatmap)
+#Overall
+
+csle_ovr = df %>% group_by(company_size,experience) %>% summarise(percentage = n()) %>% group_by(company_size) %>% 
+  mutate(percentage = round(percentage/sum(percentage)*100))
+
+ggplot(csle_ovr, aes(x = experience, y = company_size, fill = percentage)) +
+  geom_tile(color = "black") +
+  geom_text(aes(label = percentage), color = "white", size = 4) +
+  coord_fixed() + ggtitle("Heatmap of % of employees based on company size and years of experience") +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) + xlab("Experience") + ylab("Company Size")
+
+# people with over 20 years of experience dominate the work force at all company sizes. There also some heat at smaller companies with lower experience range.
+
+dev.copy(png,'p4.png')
+dev.off()
+
+# Job seeker
+
+csle_js = df %>% filter(target == "Job Seeker") %>% group_by(company_size,experience) %>% 
+  summarise(percentage = n()) %>% group_by(company_size) %>% 
+  mutate(percentage = round(percentage/sum(percentage)*100))
+
+ggplot(csle_js, aes(x = experience, y = company_size, fill = percentage)) +
+  geom_tile(color = "black") +
+  geom_text(aes(label = percentage), color = "white", size = 4) +
+  coord_fixed() + ggtitle("Percentage of job seekers based on company size and years of experience") +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) + xlab("Experience") + ylab("Company Size")
+
+dev.copy(png,'p5.png')
+dev.off()
+
+### Most new job seekers have between 2-6 yrs of experience, which intuitively makes sense as they seek new challenges once they have built their skills. 
+
+# Non Job Seeker
+
+csle_njs = df %>% filter(target == "Non-Job Seeker") %>% group_by(company_size,experience) %>% 
+  summarise(percentage = n()) %>% group_by(company_size) %>% 
+  mutate(percentage = round(percentage/sum(percentage)*100))
+
+ggplot(csle_njs, aes(x = experience, y = company_size, fill = percentage)) +
+  geom_tile(color = "black") +
+  geom_text(aes(label = percentage), color = "white", size = 4) +
+  coord_fixed() + ggtitle("% of non-job seekers based on company size and years of experience") +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1))+ xlab("Experience") + ylab("Company Size")
+
+dev.copy(png,'p6.png')
+dev.off()
+
+
+### Most non job seekers have > 20 yrs of experience, which makes sense as they might have reached the desired level of seniority in their positions.
+
+```
+
+
+
+
+```{r,echo=FALSE,include=FALSE}
+### Education level vs company type (Heatmap)
+#Overall
+
+elct_ovr = df %>% group_by(education_level,company_type) %>% summarise(percentage = n()) %>%
+  group_by(education_level) %>% mutate(percentage = round(percentage/sum(percentage)*100))
+
+ggplot(elct_ovr, aes(x = company_type, y = education_level, fill = percentage)) +
+  geom_tile(color = "black") +
+  geom_text(aes(label = percentage), color = "white", size = 4) +
+  coord_fixed() + ggtitle("Heatmap of % of employees based on edu level and company type") +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1))+ xlab("Company Type") + ylab("Education")
+
+dev.copy(png,'p7.png')
+dev.off()
+
+
+# Job seeker
+
+elct_js = df %>% filter(target == "Job Seeker") %>%  group_by(education_level,company_type) %>% summarise(percentage = n()) %>% group_by(education_level) %>% mutate(percentage = round(percentage/sum(percentage)*100))
+
+ggplot(elct_js, aes(x = company_type, y = education_level, fill = percentage)) +
+  geom_tile(color = "black") +
+  geom_text(aes(label = percentage), color = "white", size = 4) +
+  coord_fixed() + ggtitle("% of job seekers based on Education and Company Type") +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1))+ xlab("Company Type") + ylab("Education")
+
+dev.copy(png,'p8.png')
+dev.off()
+
+### Most new job seekers seem to be at the early stages of their education. Probably they are younger, building their skillset and seeking new challenges.
+
+# Non Job Seeker
+elct_njs = df %>% filter(target == "Non-Job Seeker") %>% group_by(education_level,company_type) %>%
+  summarise(percentage = n()) %>% group_by(education_level) %>% mutate(percentage =
+            round(percentage/sum(percentage)*100))
+
+ggplot(elct_njs, aes(x = company_type, y = education_level, fill = percentage)) +
+  geom_tile(color = "black") +
+  geom_text(aes(label = percentage), color = "white", size = 4) +
+  coord_fixed() + ggtitle("% of Non-Job Seekers based on Education and Company Type") +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1))+ xlab("Company Type") + ylab("Education")
+
+dev.copy(png,'p9.png')
+dev.off()
+
+### People with a higher education level dominate in terms of not seeking a new job across compny types.
+
+```
+
+
+```{r,echo=FALSE,include=FALSE}
+### Major
+
+major_df = df %>% group_by(major_discipline) %>% summarise(total = n())
+
+# Job seekers
+
+major_js = df %>% filter(target == "Job Seeker") %>% group_by(major_discipline) %>% tally() %>% 
+  mutate(total = 4777) %>% mutate(percentage = round((n/total)*100))
+
+major_df1 = major_df %>% cbind(n = major_js$n) %>% mutate(percentage = round((n/total)*100))
+
+ggplot(major_df1, aes(area = percentage, fill = major_discipline,
+               label = paste(major_discipline, percentage, sep = "\n"))) +
+  geom_treemap() +
+  geom_treemap_text(colour = "white",
+                    place = "centre",
+                    size = 15) +
+  theme(legend.position = "none") + ggtitle("% of people seeking a new job based on major discipline")
+
+dev.copy(png,'p10.png')
+dev.off()
+
+# Non job seekers
+
+major_njs = df %>% filter(target == "Non-Job Seeker") %>% group_by(major_discipline) %>% tally() %>% 
+  mutate(total = 14381) %>% mutate(percentage = round((n/total)*100))
+
+major_df2 = major_df %>% cbind(n = major_njs$n) %>% mutate(percentage = round((n/total)*100))
+
+
+ggplot(major_df2, aes(area = percentage, fill = major_discipline,
+               label = paste(major_discipline, percentage, sep = "\n"))) +
+  geom_treemap() +
+  geom_treemap_text(colour = "white",
+                    place = "centre",
+                    size = 15) +
+  theme(legend.position = "none") + ggtitle("% of people not seeking a new job based on major discipline")
+
+
+
+# Most of the people with STEM/business/other degrees are seeking new jobs in comparison to other majors
+
+
+```
+
+
+
+
+```{r ref.label=knitr::all_labels(), echo=TRUE, eval=FALSE}
+```
